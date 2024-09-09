@@ -1,0 +1,169 @@
+import os
+import subprocess
+import shutil
+import logging
+from datetime import datetime
+
+# 設置日誌紀錄
+log_file = 'process.log'
+logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# 指定 track 資料夾的路徑
+directory = './Tracks'
+
+# 指定 ffmpeg 可執行檔的完整路徑
+ffmpeg_path = r'C:\ffmpeg-7.0.2-full_build\bin\ffmpeg.exe'
+
+# 模擬分析參與者的函數（根據檔名來分析）
+def get_participant_name(file_name):
+    return file_name.split('_')[0] if '_' in file_name else 'Unknown'
+
+# 建立子資料夾（如果不存在）
+def create_folder_if_not_exists(folder_path):
+    if not os.path.exists(folder_path):
+        os.mkdir(folder_path)
+
+# 取得檔案名中的參與者名稱
+def get_file_base_name(file_name):
+    return os.path.splitext(file_name)[0]
+
+# 確認 ffmpeg 路徑是否有效
+if not os.path.exists(ffmpeg_path):
+    logging.error(f"錯誤: ffmpeg 路徑不存在 -> {ffmpeg_path}")
+    print(f"錯誤: ffmpeg 路徑不存在 -> {ffmpeg_path}")
+    exit(1)
+
+# 取得該路徑下的所有檔案
+files = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+
+# 記錄所有已處理過的檔案名，避免重複處理
+processed_files = set()
+
+# 遍歷所有檔案，處理 .m4a 和 .lrc 檔案
+for file in files:
+    file_name, file_ext = os.path.splitext(file)  # 取得檔案名和副檔名
+
+    participant_name = get_participant_name(file)  # 取得參與者名稱
+
+    # 建立參與者的資料夾
+    participant_folder = os.path.join(directory, participant_name)
+    create_folder_if_not_exists(participant_folder)
+
+    # 建立檔案名對應的子資料夾
+    file_folder = os.path.join(participant_folder, file_name)
+    if not os.path.exists(file_folder):
+        os.mkdir(file_folder)
+    else:
+        logging.info(f"已存在目錄 {file_folder}")
+        print(f"已存在目錄 {file_folder}")
+
+    lrc_exists = False
+    error_occurred = False
+
+    # 處理 .m4a 檔案，轉換為 .flac
+    if file_ext == '.m4a':
+        input_path = os.path.join(directory, file)
+        output_path = os.path.join(file_folder, file_name + '.flac')
+
+        # 檢查是否已經存在 .flac 檔案
+        if os.path.exists(output_path):
+            logging.info(f"已存在 {output_path}，不需要轉檔。")
+            print(f"已存在 {output_path}，不需要轉檔。")
+        else:
+            # 使用 ffmpeg 進行轉換，並指定 ffmpeg 的完整路徑
+            command = [ffmpeg_path, '-i', input_path, output_path]
+            logging.info(f"執行命令: {' '.join(command)}")
+
+            # 執行 ffmpeg 命令
+            try:
+                result = subprocess.run(command, check=True, capture_output=True, text=True)
+                logging.info(f"成功轉換: {file} -> {output_path}")
+                logging.info(f"ffmpeg 輸出: {result.stdout}")
+                print(f"成功轉換: {file} -> {output_path}")
+                print(f"ffmpeg 輸出: {result.stdout}")
+            except subprocess.CalledProcessError as e:
+                logging.error(f"轉換失敗: {file}, 錯誤: {e}")
+                logging.error(f"ffmpeg 輸出: {e.output}")
+                print(f"轉換失敗: {file}, 錯誤: {e}")
+                print(f"ffmpeg 輸出: {e.output}")
+                error_occurred = True
+                continue  # 若轉檔失敗，不刪除 .m4a 檔案，繼續處理其他檔案
+
+        # 刪除原始的 .m4a 檔案
+        if not error_occurred:
+            try:
+                os.remove(input_path)
+                logging.info(f"已刪除原始檔案: {file}")
+                print(f"已刪除原始檔案: {file}")
+            except OSError as e:
+                logging.error(f"無法刪除 {file}，錯誤: {e}")
+                print(f"無法刪除 {file}，錯誤: {e}")
+
+        processed_files.add(file_name)  # 記錄已處理的檔案名
+
+    # 處理 .lrc 檔案，移動到對應的資料夾
+    elif file_ext == '.lrc':
+        input_path = os.path.join(directory, file)
+        output_lrc_path = os.path.join(file_folder, file)
+
+        # 確認輸出路徑和檔案
+        logging.info(f"準備移動 {file} 到 {file_folder}")
+        print(f"準備移動 {file} 到 {file_folder}")
+
+        # 移動 .lrc 檔案到對應的資料夾
+        try:
+            shutil.move(input_path, output_lrc_path)
+            logging.info(f"已移動 {file} -> {output_lrc_path}")
+            print(f"已移動 {file} -> {output_lrc_path}")
+            lrc_exists = True
+        except OSError as e:
+            logging.error(f"無法移動 {file}，錯誤: {e}")
+            print(f"無法移動 {file}，錯誤: {e}")
+
+        processed_files.add(file_name)  # 記錄已處理的檔案名
+
+    # 處理 .flac 檔案，移動到對應的資料夾
+    elif file_ext == '.flac':
+        input_path = os.path.join(directory, file)
+        output_flac_path = os.path.join(file_folder, file)
+
+        # 確認輸出路徑和檔案
+        logging.info(f"準備移動 {file} 到 {file_folder}")
+        print(f"準備移動 {file} 到 {file_folder}")
+
+        # 移動 .flac 檔案到對應的資料夾
+        try:
+            shutil.move(input_path, output_flac_path)
+            logging.info(f"已移動 {file} -> {output_flac_path}")
+            print(f"已移動 {file} -> {output_flac_path}")
+        except OSError as e:
+            logging.error(f"無法移動 {file}，錯誤: {e}")
+            print(f"無法移動 {file}，錯誤: {e}")
+
+        processed_files.add(file_name)  # 記錄已處理的檔案名
+
+# 移動所有子資料夾回主目錄
+for participant_folder in os.listdir(directory):
+    full_participant_folder = os.path.join(directory, participant_folder)
+    if os.path.isdir(full_participant_folder):
+        for subfolder in os.listdir(full_participant_folder):
+            full_subfolder = os.path.join(full_participant_folder, subfolder)
+            if os.path.isdir(full_subfolder):
+                try:
+                    shutil.move(full_subfolder, directory)
+                    logging.info(f"已移動子資料夾 {full_subfolder} 到主目錄")
+                    print(f"已移動子資料夾 {full_subfolder} 到主目錄")
+                except OSError as e:
+                    logging.error(f"無法移動子資料夾 {full_subfolder}，錯誤: {e}")
+                    print(f"無法移動子資料夾 {full_subfolder}，錯誤: {e}")
+
+# 刪除名為 'Unknown' 的資料夾（如果存在）
+unknown_folder = os.path.join(directory, 'Unknown')
+if os.path.isdir(unknown_folder):
+    try:
+        shutil.rmtree(unknown_folder)
+        logging.info(f"已刪除 'Unknown' 資料夾")
+        print(f"已刪除 'Unknown' 資料夾")
+    except OSError as e:
+        logging.error(f"無法刪除 'Unknown' 資料夾，錯誤: {e}")
+        print(f"無法刪除 'Unknown' 資料夾，錯誤: {e}")
